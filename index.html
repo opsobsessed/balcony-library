@@ -149,7 +149,7 @@ button.plate{cursor:pointer}
 .inhand .meta{min-width:0;display:flex;flex-direction:column;gap:2px}
 .inhand h3{font-size:20px;line-height:1.2;overflow-wrap:anywhere}
 .inhand .by{font-size:13px;color:var(--ink-2)}
-.chip{display:inline-flex;gap:6px;align-items:center;margin-top:6px;padding:3px 8px;border-radius:5px;background:var(--paper-2);font-family:var(--f-stamp);font-size:11px;color:var(--ink-2);width:max-content;max-width:100%}
+.chip{display:inline-block;margin-top:6px;padding:3px 8px;border-radius:5px;background:var(--paper-2);font-family:var(--f-stamp);font-size:11px;color:var(--ink-2);width:max-content;max-width:100%}
 .chip b{color:var(--terra)}
 .cta{width:100%;padding:13px 16px;border-radius:999px;background:var(--ink);color:var(--paper);font-family:var(--f-display);font-size:17px;font-weight:600;letter-spacing:.01em;display:flex;gap:8px;justify-content:center;align-items:center;box-shadow:0 4px 12px var(--shadow);transition:transform .15s, background .3s}
 .cta:active{transform:scale(.98)}
@@ -160,14 +160,14 @@ button.plate{cursor:pointer}
 .slip p{margin:0;font-style:italic}
 
 /* ---------- covers ---------- */
-.cover{position:relative;flex:none;border-radius:3px 6px 6px 3px;overflow:hidden;box-shadow:0 3px 10px var(--shadow),inset 3px 0 0 rgba(0,0,0,.18);display:flex;flex-direction:column;justify-content:space-between;padding:10% 9%;color:#fbf3e6}
+.cover{position:relative;flex:none;border-radius:3px 6px 6px 3px;overflow:hidden;box-shadow:0 3px 10px var(--shadow),inset 3px 0 0 rgba(0,0,0,.18);display:flex;flex-direction:column;justify-content:space-between;padding:9px 7px;color:#fbf3e6}
 .cover .ct{font-family:var(--f-display);font-weight:600;line-height:1.1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
 .cover .ca{font-family:var(--f-stamp);text-transform:uppercase;letter-spacing:.05em;opacity:.85;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .cover::before{content:"";position:absolute;inset:6%;border:1px solid currentColor;opacity:.3;border-radius:2px;pointer-events:none}
 .cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .cv-s{width:58px;height:86px}.cv-s .ct{font-size:10px}.cv-s .ca{font-size:6px}
 .cv-m{width:76px;height:112px}.cv-m .ct{font-size:12.5px}.cv-m .ca{font-size:7px}
-.cv-l{width:132px;height:196px}.cv-l .ct{font-size:19px}.cv-l .ca{font-size:9px}
+.cv-l{width:132px;height:196px;padding:16px 13px}.cv-l .ct{font-size:19px}.cv-l .ca{font-size:9px}
 
 /* ---------- sheets ---------- */
 .backdrop{position:fixed;inset:0;background:rgba(25,16,10,.38);z-index:60;opacity:0;transition:opacity .25s}
@@ -315,8 +315,8 @@ button.plate{cursor:pointer}
       <g class="city"><rect x="0" y="6" width="16" height="36"/><rect x="18" y="0" width="13" height="42"/><rect x="33" y="14" width="10" height="28"/><rect x="45" y="22" width="22" height="20"/><rect x="69" y="30" width="16" height="12"/><rect x="88" y="34" width="30" height="8"/></g>
       <g class="lamp"><circle cx="9" cy="14" r=".9"/><circle cx="23" cy="9" r=".9"/><circle cx="25" cy="20" r=".9"/><circle cx="37" cy="24" r=".9"/><circle cx="54" cy="30" r=".9"/></g>
       <path class="road" d="M0 42 L130 40 C190 39 230 44 400 62 L400 72 C230 54 190 49 130 48 L0 50 Z"/>
-      <path class="road" style="opacity:.6" d="M0 52 L120 50 C200 50 240 58 400 82 L400 140 L0 140 Z"/>
-      <g class="tree"><circle cx="30" cy="62" r="7"/><circle cx="70" cy="66" r="8"/><circle cx="118" cy="72" r="7"/><circle cx="170" cy="82" r="9"/><circle cx="230" cy="96" r="8"/><circle cx="300" cy="114" r="10"/><circle cx="12" cy="90" r="12"/><circle cx="60" cy="104" r="14"/></g>
+      <path class="road" style="filter:brightness(.82)" d="M0 52 L120 50 C200 50 240 58 400 82 L400 140 L0 140 Z"/>
+      <g class="tree"><circle cx="20" cy="58" r="4"/><circle cx="58" cy="60" r="4.5"/><circle cx="98" cy="62" r="4"/><circle cx="140" cy="66" r="4.5"/><circle cx="185" cy="72" r="4"/><circle cx="232" cy="80" r="4.5"/><circle cx="282" cy="89" r="4"/><circle cx="335" cy="99" r="4.5"/><circle cx="388" cy="108" r="4"/></g>
       <g class="lamp"><circle cx="150" cy="44" r="1.1"/><circle cx="200" cy="47" r="1.1"/><circle cx="250" cy="52" r="1.1"/><circle cx="300" cy="58" r="1.1"/><circle cx="350" cy="64" r="1.1"/><circle cx="395" cy="70" r="1.1"/><circle cx="100" cy="41" r="1.1"/><circle cx="50" cy="42" r="1.1"/></g>
     </svg>
     <div class="rail"></div>
@@ -654,8 +654,9 @@ function logHTML() {
 
 /* ================= sheets ================= */
 const sheet = $("#sheet"), backdrop = $("#backdrop");
-let onClose = null;
+let onClose = null, hideT = null;
 function openSheet(html, closeCb) {
+  clearTimeout(hideT);
   sheet.innerHTML = `<div class="grab"></div>` + html;
   sheet.hidden = false; backdrop.hidden = false; onClose = closeCb || null;
   requestAnimationFrame(() => { sheet.classList.add("on"); backdrop.classList.add("on"); });
@@ -665,7 +666,7 @@ function closeSheet() {
   sheet.classList.remove("on"); backdrop.classList.remove("on");
   document.documentElement.classList.remove("ritual");
   const cb = onClose; onClose = null;
-  setTimeout(() => { sheet.hidden = true; backdrop.hidden = true; }, 320);
+  clearTimeout(hideT); hideT = setTimeout(() => { sheet.hidden = true; backdrop.hidden = true; }, 320);
   if (cb) cb();
 }
 backdrop.addEventListener("click", closeSheet);
@@ -836,7 +837,7 @@ function addBook(b, as) {
   if (S.sample) { S.sample = false; S.books = local.read() || []; }
   if (as === "done") { pastSheet(b, true); return; }
   S.books.push(b); save(b);
-  whySheet(b, () => { render(); toast(as === "reading" ? "On the table. Enjoy it." : "On your Want to read shelf"); });
+  whySheet(b, () => { if (as === "reading") S.tab = "library"; render(); toast(as === "reading" ? "On the table. Enjoy it." : "On your Want to read shelf"); });
 }
 
 function sortReadings(b) { b.readings.sort((x, y) => (x.end ? 0 : 1) - (y.end ? 0 : 1) || (x.start < y.start ? -1 : 1)); }
