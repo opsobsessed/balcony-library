@@ -286,6 +286,24 @@ button.plate{cursor:pointer}
 .banner{margin:10px 14px 0;padding:10px 14px;border-radius:12px;background:var(--sage-soft);color:var(--ink);font-size:13px;display:flex;gap:10px;align-items:center;justify-content:space-between}
 .banner button{font-weight:700;color:var(--terra);white-space:nowrap}
 
+/* reading now */
+.readnow{position:fixed;inset:0;z-index:45;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;padding:24px 16px calc(28px + env(safe-area-inset-bottom,0px));pointer-events:none;opacity:0;transition:opacity .8s}
+:root.reading .readnow{opacity:1;pointer-events:auto}
+:root.reading .app,:root.reading .nav{opacity:0;pointer-events:none;transition:opacity .8s}
+.app,.nav{transition:opacity .6s}
+.rn-card{width:min(360px,100%);border-radius:22px;padding:20px 18px;background:color-mix(in srgb,var(--paper) 80%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 10px 30px var(--shadow);display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center}
+.rn-card h2{font-size:22px}
+.rn-time{font-family:var(--f-stamp);font-size:34px;font-weight:700;letter-spacing:.04em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.rn-card .tea{transform:scale(1.6);margin:6px 0 4px}
+.rn-card .btns{width:100%}
+.backup{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:12px;background:color-mix(in srgb,var(--card) 92%,transparent);box-shadow:0 2px 10px var(--shadow);font-size:13.5px}
+.backup b{color:var(--terra)}
+.backup button{font-weight:700;color:var(--terra);white-space:nowrap}
+.yc{display:flex;flex-direction:column;gap:8px}
+.yc .row{min-height:84px}
+.yc .spine{transform:none}
+.coverpick{display:flex;gap:14px;align-items:center}
+.coverpick .btns{flex:1}
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation:none!important;transition-duration:.01ms!important}
 }
@@ -309,9 +327,11 @@ button.plate{cursor:pointer}
 <div class="app" id="app">
   <header class="top">
     <div class="brand"><h1>The Balcony Library</h1><span class="stamp" id="subline">A private shelf</span></div>
+    <div style="display:flex;gap:2px">
+    <button class="iconbtn" id="soundBtn" aria-label="Sea sounds" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 13c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M3 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0" opacity=".55"/><path id="soundSlash" d="M4 4l16 16"/></svg></button>
     <button class="iconbtn" id="menuBtn" aria-label="Library card and backups">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="4" y="3.5" width="16" height="17" rx="1.5"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
-    </button>
+    </button></div>
   </header>
   <div id="view"></div>
 </div>
@@ -321,6 +341,12 @@ button.plate{cursor:pointer}
   <button data-tab="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4" stroke-linecap="round"/></svg><span>Log</span></button>
   <button data-tab="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Add</span></button>
 </nav>
+<div class="readnow" id="readnow" aria-hidden="true"><div class="rn-card">
+  <span class="stamp" style="color:var(--terra)">Reading now</span><h2 id="rnTitle"></h2>
+  <div class="tea" id="rnTea" aria-hidden="true"><i></i><i></i><i></i><span class="cup"></span><span class="saucer"></span></div>
+  <div class="rn-time" id="rnTime">0:00</div><p class="sub" id="rnNote" style="margin:-6px 0 0">Your tea is warm.</p>
+  <div class="btns"><button class="btn primary" data-act="rn-done">Done reading</button><button class="btn" data-act="rn-sound" id="rnSound">Sea sounds</button></div>
+  <button class="btn quiet small" data-act="rn-cancel">Stop without logging</button></div></div>
 <div class="backdrop" id="backdrop" hidden></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></div>
 <div class="toast" id="toast" role="status"></div>
@@ -412,12 +438,16 @@ const store = {
   },
   del(id) {
     if (S.sample) return;
+    bump();
     local.write(S.books);
     if (this.mode !== "db") return;
     this.chains[id] = (this.chains[id] || Promise.resolve()).then(() => this.col.doc(id).delete()).catch(() => {});
   }
 };
-function save(b) { b.updatedAt = Date.now(); store.put(b); }
+const DIRTY = "balcony-unbacked";
+const dirty = () => { try { return +localStorage.getItem(DIRTY) || 0; } catch { return 0; } };
+const bump = () => { if (S.sample) return; try { localStorage.setItem(DIRTY, dirty() + 1); } catch {} };
+function save(b) { b.updatedAt = Date.now(); store.put(b); bump(); }
 
 /* ================= book model ================= */
 function newBook(info, status) {
@@ -540,6 +570,7 @@ function libraryHTML(tod) {
 
   return `
   <div class="timechip">${tod === "night" ? ICON.moon : ICON.sun}<span class="stamp" style="font-weight:700">${esc(time)} · Marine Drive</span></div>
+  ${!S.sample && store.mode !== "db" && dirty() > 0 && S.books.length ? `<div class="stage" style="margin-top:10px;gap:0"><div class="backup"><span><b>${dirty()}</b> ${dirty() === 1 ? "change" : "changes"} since your last backup</span><button data-act="export">Save backup</button></div></div>` : ""}
   ${S.sample ? `<div class="banner" style="position:relative;z-index:3"><span>You're looking at sample books. Nothing here is saved.</span><button data-act="clear-sample">Start my shelf</button></div>` : ""}
   <div class="stage">
     <section class="case" aria-label="Bookcase">
@@ -578,7 +609,7 @@ function searchHTML() {
         <div class="meta"><h3>${esc(r.title)}</h3><span class="muted" style="font-size:13px">${esc(authorStr(r))}</span>${facts ? `<span class="facts">${esc(facts)}</span>` : ""}
         ${r.blurb ? `<span class="blurb">${esc(r.blurb)}</span>` : ""}
         ${owned ? `<span class="added">Already in your library · ${owned.status === "finished" ? "finished" : owned.status === "reading" ? "on the table" : owned.status === "aside" ? "set aside" : "want to read"}</span>`
-          : `<div class="btns"><button class="btn small" data-add="${i}" data-as="want">Add to Want to Read</button><button class="btn small primary" data-add="${i}" data-as="reading">Start reading</button></div>`}
+          : `<div class="btns"><button class="btn small" data-add="${i}" data-as="want">Add to Want to Read</button><button class="btn small primary" data-add="${i}" data-as="reading">Start reading</button><button class="btn small" data-add="${i}" data-as="done">Already read</button></div>`}
         </div></article>`;
     }).join("") + (S.source ? `<p class="source">${esc(S.source)}</p>` : "")
     : `<div class="notice">No books matched “${esc(S.query)}”. Try the author's name, or add it by hand below.</div>`;
@@ -661,7 +692,7 @@ function pullSheet(b, rect, el) {
       ${kind === "aside" ? `<p class="sub" style="margin:0">Set aside${cur(b) ? " after starting on " + fmt(cur(b).start) : ""}.</p>` : ""}
       <div class="btns" style="width:100%"><button class="btn primary" data-act="start" data-id="${b.id}">${kind === "aside" ? "Pick back up" : "Start reading"}</button><button class="btn" data-act="close">Back to shelf</button></div>
       ${!b.why && kind === "want" ? `<button class="btn quiet small" data-act="edit-why" data-id="${b.id}">Add why you picked this up</button>` : ""}
-      <button class="btn quiet small" data-act="remove" data-id="${b.id}" style="color:var(--ink-3)">Remove from library</button>
+      <div class="btns" style="width:100%"><button class="btn quiet small" data-act="edit" data-id="${b.id}">Edit details</button><button class="btn quiet small" data-act="remove" data-id="${b.id}" style="color:var(--ink-3)">Remove</button></div>
     </div>`, () => el && el.classList.remove("pulling"));
   flyFrom(rect);
 }
@@ -678,7 +709,9 @@ function currentSheet(b) {
       <button class="action" data-act="finish" data-id="${b.id}">${ICON.check}I finished it<small>Place it on the shelf</small></button>
       <button class="action" data-act="aside" data-id="${b.id}">${ICON.pause}Set aside for now<small>Pause without guilt</small></button>
       <button class="action" data-act="card" data-id="${b.id}">${ICON.book}Book card<small>Dates, notes, history</small></button>
-    </div></div>`);
+    </div>
+    <button class="btn primary" data-act="readnow" data-id="${b.id}">Start a reading session</button>
+    <p class="sub" style="margin:-4px 0 0;text-align:center;font-size:12.5px">Everything fades except the sea. Your minutes are added to today.</p></div>`);
 }
 
 function bookCard(b, ri, rect) {
@@ -690,7 +723,7 @@ function bookCard(b, ri, rect) {
     const end = r.end || today();
     const span = diff(r.start, end) + 1;
     const set = new Set(r.days.map(d => d.date));
-    datesLine = `<div class="dates">Started ${fmt(r.start)} → ${r.end ? "Finished " + fmt(r.end) : "still reading"}</div><div class="sub" style="font-size:13px">${span} ${span === 1 ? "day" : "days"}, read on ${r.days.length} of them</div>`;
+    datesLine = `<div class="dates">Started ${fmt(r.start)} → ${r.end ? "Finished " + fmt(r.end) : "still reading"}</div><div class="sub" style="font-size:13px">${span} ${span === 1 ? "day" : "days"}${r.days.length ? `, read on ${r.days.length} of them` : (r.end ? " · daily log not kept" : "")}${(() => { const mm = r.days.reduce((a, x) => a + (x.minutes || 0), 0); return mm ? " · " + (mm >= 60 ? Math.floor(mm / 60) + " h " : "") + (mm % 60) + " min" : ""; })()}</div>`;
     if (span <= 120) { let x = parse(r.start); const out = []; for (let i = 0; i < span; i++) { out.push(`<i class="${set.has(iso(x)) ? "on" : ""}" title="${fmt(iso(x))}"></i>`); x.setDate(x.getDate()+1); } dots = `<div class="dots">${out.join("")}</div>`; }
   }
   const thoughts = r ? r.days.filter(d => d.thought) : [];
@@ -705,9 +738,9 @@ function bookCard(b, ri, rect) {
     ${r && r.closing ? `<div class="sec"><h3>Closing line</h3><p class="q">${esc(r.closing)}</p></div>` : ""}
     <div class="sec"><h3>Quotes I kept</h3>${b.quotes.length ? `<div class="list">${b.quotes.map((q, i) => `<div class="entry"><p class="q">“${esc(q.text)}”</p><button class="x" data-del="quote" data-i="${i}" data-id="${b.id}" aria-label="Delete quote">×</button></div>`).join("")}</div>` : ""}<button class="btn quiet small" style="align-self:flex-start;padding-left:0" data-act="quote" data-id="${b.id}">+ Keep a quote</button></div>
     <div class="sec"><h3>Notes</h3>${(b.notes.length || thoughts.length) ? `<div class="list">${b.notes.map((n, i) => `<div class="entry"><p><span class="stamp muted">${fmt(n.date)}</span> ${esc(n.text)}</p><button class="x" data-del="note" data-i="${i}" data-id="${b.id}" aria-label="Delete note">×</button></div>`).join("")}${thoughts.map(t => `<div class="entry"><p><span class="stamp muted">${fmt(t.date)}</span> ${esc(t.thought)}${t.page ? ` <span class="muted">(p. ${esc(t.page)})</span>` : ""}</p></div>`).join("")}</div>` : ""}<button class="btn quiet small" style="align-self:flex-start;padding-left:0" data-act="note" data-id="${b.id}">+ Add a note</button></div>
-    ${reads.length ? `<div class="sec"><h3>Reading history</h3>${hist}</div>` : ""}
+    <div class="sec"><h3>Reading history</h3>${hist}<button class="btn quiet small" style="align-self:flex-start;padding-left:0" data-act="past" data-id="${b.id}">+ Add an earlier read</button></div>
     <div class="btns">${b.status === "finished" ? `<button class="btn primary" data-act="reread" data-id="${b.id}">Read again</button>` : b.status === "reading" ? `<button class="btn primary" data-act="finish" data-id="${b.id}">I finished it</button>` : `<button class="btn primary" data-act="start" data-id="${b.id}">Start reading</button>`}<button class="btn" data-act="close">Close</button></div>
-    <button class="btn quiet small" data-act="remove" data-id="${b.id}" style="color:var(--ink-3)">Remove from library</button>
+    <div class="btns"><button class="btn quiet small" data-act="edit" data-id="${b.id}">Edit details</button><button class="btn quiet small" data-act="remove" data-id="${b.id}" style="color:var(--ink-3)">Remove from library</button></div>
   </div>`);
   flyFrom(rect);
 }
@@ -781,11 +814,11 @@ function manualSheet() {
     <label class="field"><span>Title</span><input id="m-title" required></label>
     <label class="field"><span>Author</span><input id="m-author"></label>
     <div class="row2"><label class="field"><span>Pages</span><input id="m-pages" inputmode="numeric"></label><label class="field"><span>Year</span><input id="m-year" inputmode="numeric"></label></div>
-    <div class="btns"><button class="btn" type="submit" data-as="want">Want to read</button><button class="btn primary" type="submit" data-as="reading">Start reading</button></div></form>`);
+    <div class="btns"><button class="btn" type="submit" data-as="want">Want to read</button><button class="btn primary" type="submit" data-as="reading">Start reading</button><button class="btn" type="submit" data-as="done">Already read</button></div></form>`);
   $("#manForm").addEventListener("submit", e => {
     e.preventDefault();
     const as = e.submitter?.dataset.as || "want";
-    const b = newBook({ title: $("#m-title").value.trim(), authors: $("#m-author").value.trim() ? [$("#m-author").value.trim()] : [], pages: parseInt($("#m-pages").value) || null, year: parseInt($("#m-year").value) || null }, as);
+    const b = newBook({ title: $("#m-title").value.trim(), authors: $("#m-author").value.trim() ? [$("#m-author").value.trim()] : [], pages: parseInt($("#m-pages").value) || null, year: parseInt($("#m-year").value) || null }, as === "done" ? "finished" : as);
     addBook(b, as);
   });
 }
@@ -801,8 +834,182 @@ function whySheet(b, after) {
 
 function addBook(b, as) {
   if (S.sample) { S.sample = false; S.books = local.read() || []; }
+  if (as === "done") { pastSheet(b, true); return; }
   S.books.push(b); save(b);
   whySheet(b, () => { render(); toast(as === "reading" ? "On the table. Enjoy it." : "On your Want to read shelf"); });
+}
+
+function sortReadings(b) { b.readings.sort((x, y) => (x.end ? 0 : 1) - (y.end ? 0 : 1) || (x.start < y.start ? -1 : 1)); }
+function pastSheet(b, isNew) {
+  const sel = { color: colorOf(b) };
+  const t = today();
+  openSheet(`<form class="stack" id="pastForm">
+    <div class="bc-head">${coverHTML(b, "m")}<div class="meta"><span class="stamp" style="color:var(--terra)">${isNew ? "Already read" : "Add an earlier read"}</span><h2>${esc(b.title)}</h2><p class="sub" style="margin:0">${esc(authorStr(b))}</p></div></div>
+    <p class="sub" style="margin:0">Roughly is fine. If you only remember the month, pick any day in it.</p>
+    <div class="row2"><label class="field"><span>Started</span><input type="date" id="p-start" max="${t}" required></label><label class="field"><span>Finished</span><input type="date" id="p-end" max="${t}" required></label></div>
+    ${isNew ? `<label class="field"><span>Why you picked it up (optional)</span><input id="p-why" placeholder="Recommended by Mum"></label>` : ""}
+    <label class="field"><span>A closing line (optional)</span><textarea id="p-close" placeholder="One sentence about the book, or where you were while reading it"></textarea></label>
+    <div class="field"><label>Its color</label><div class="swatches" id="psws">${PALETTE.map(c => `<button type="button" class="sw ${c === sel.color ? "sel" : ""}" data-sw="${c}" style="background:${c}" aria-label="Color ${c}"></button>`).join("")}</div></div>
+    <button class="btn terra" type="submit" id="pBtn">Place on the shelf</button>
+    <button class="btn quiet" type="button" data-act="close">Cancel</button></form>`);
+  $("#psws").addEventListener("click", e => { const x = e.target.closest("[data-sw]"); if (!x) return; sel.color = x.dataset.sw; document.querySelectorAll("#psws .sw").forEach(s => s.classList.toggle("sel", s === x)); });
+  const sync = () => { const v = $("#p-end").value; if (v) $("#pBtn").textContent = "Place on the " + MONTH[parse(v).getMonth()] + " " + parse(v).getFullYear() + " shelf"; if ($("#p-start").value) $("#p-end").min = $("#p-start").value; };
+  $("#p-end").addEventListener("change", sync); $("#p-start").addEventListener("change", sync);
+  $("#pastForm").addEventListener("submit", e => {
+    e.preventDefault();
+    let st = $("#p-start").value, en = $("#p-end").value;
+    if (!st || !en) return;
+    if (en < st) [st, en] = [en, st];
+    b.readings.push({ start: st, end: en, days: [], closing: $("#p-close").value.trim() });
+    sortReadings(b);
+    if (isNew) { b.why = ($("#p-why")?.value || "").trim(); b.status = "finished"; S.books.push(b); }
+    else if (b.status === "want") b.status = "finished";
+    b.color = sel.color; save(b);
+    const ri = b.readings.findIndex(r => r.end === en && r.start === st);
+    S.year = parse(en).getFullYear(); S.tab = "library";
+    closeSheet(); S.lastArrive = b.id + ":" + ri; render();
+    toast("On the " + MONTH[parse(en).getMonth()] + " shelf");
+    setTimeout(() => { const el = document.querySelector(".spine.arrive"); el && el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" }); }, 80);
+  });
+}
+
+/* ---- edit details ---- */
+function shrinkImage(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => { const im = new Image(); im.onload = () => { const w = 260, h = Math.round(im.height * w / im.width); const c = document.createElement("canvas"); c.width = w; c.height = Math.min(h, 420); c.getContext("2d").drawImage(im, 0, 0, w, h); res(c.toDataURL("image/jpeg", .82)); }; im.onerror = rej; im.src = fr.result; };
+    fr.onerror = rej; fr.readAsDataURL(file);
+  });
+}
+function editSheet(b) {
+  const st = { thumb: b.thumb, color: colorOf(b) };
+  const draw = () => { $("#e-cover").innerHTML = coverHTML({ ...b, thumb: st.thumb, color: st.color, title: $("#e-title")?.value || b.title }, "m"); };
+  openSheet(`<form class="stack" id="editForm"><h2>Edit details</h2>
+    <label class="field"><span>Title</span><input id="e-title" value="${esc(b.title)}" required></label>
+    <label class="field"><span>Author (separate several with commas)</span><input id="e-author" value="${esc((b.authors || []).join(", "))}"></label>
+    <div class="row2"><label class="field"><span>Pages</span><input id="e-pages" inputmode="numeric" value="${esc(b.pages || "")}"></label><label class="field"><span>Year</span><input id="e-year" inputmode="numeric" value="${esc(b.year || "")}"></label></div>
+    <div class="field"><label>Cover</label><div class="coverpick"><div id="e-cover"></div><div class="btns" style="flex-direction:column"><label class="btn small" style="cursor:pointer">Use a photo<input type="file" id="e-file" accept="image/*" hidden></label><button type="button" class="btn small quiet" id="e-nocover">Use plain cover</button></div></div></div>
+    <div class="field"><label>Spine color</label><div class="swatches" id="esws">${PALETTE.map(c => `<button type="button" class="sw ${c === st.color ? "sel" : ""}" data-sw="${c}" style="background:${c}" aria-label="Color ${c}"></button>`).join("")}</div></div>
+    <div class="btns"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-act="close">Cancel</button></div></form>`);
+  draw();
+  $("#esws").addEventListener("click", e => { const x = e.target.closest("[data-sw]"); if (!x) return; st.color = x.dataset.sw; document.querySelectorAll("#esws .sw").forEach(s => s.classList.toggle("sel", s === x)); draw(); });
+  $("#e-file").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; try { st.thumb = await shrinkImage(f); draw(); } catch { toast("That photo couldn't be opened"); } });
+  $("#e-nocover").addEventListener("click", () => { st.thumb = null; draw(); });
+  $("#editForm").addEventListener("submit", e => {
+    e.preventDefault();
+    b.title = $("#e-title").value.trim() || b.title;
+    b.authors = $("#e-author").value.split(",").map(x => x.trim()).filter(Boolean);
+    b.pages = parseInt($("#e-pages").value) || null; b.year = parseInt($("#e-year").value) || null;
+    b.thumb = st.thumb; b.color = st.color; save(b);
+    closeSheet(); render(); toast("Details saved");
+  });
+}
+
+/* ---- year bookcase ---- */
+function yearCaseSheet(year) {
+  const fin = finishedIn(year); const by = {};
+  fin.forEach(x => { const m = parse(x.r.end).getMonth(); (by[m] = by[m] || []).push(x); });
+  const last = year === new Date().getFullYear() ? new Date().getMonth() : 11;
+  let rows = "";
+  for (let m = 0; m <= last; m++) {
+    const list = by[m] || [];
+    rows += `<div class="bay"><div class="bayhead"><span class="plate">${MON[m]}</span><span class="count">${list.length || ""}</span></div><div class="row">${list.map(x => spineHTML(x.b, { kind: "fin", ri: x.i, reread: x.i > 0 })).join("") || `<div class="ghost" style="height:60px">Quiet month</div>`}</div><div class="plank"></div></div>`;
+  }
+  S.yearBlob = null;
+  openSheet(`<div class="stack"><div class="stack center"><span class="stamp" style="color:var(--terra)">The whole year</span><h2>${year} bookcase</h2><p class="sub" style="margin:0">${fin.length} ${fin.length === 1 ? "book" : "books"} finished</p></div>
+    <section class="case yc">${rows}</section>
+    <div class="btns"><button class="btn primary" data-act="save-yearcase" id="ycSave" disabled>Preparing picture…</button><button class="btn" data-act="close">Close</button></div></div>`);
+  yearImage(year).then(bl => { S.yearBlob = bl; const bt = $("#ycSave"); if (bt) { bt.disabled = !bl; bt.textContent = "Save as picture"; bt.dataset.year = year; } });
+}
+async function yearImage(year) {
+  const fin = finishedIn(year); const by = {};
+  fin.forEach(x => { const m = parse(x.r.end).getMonth(); (by[m] = by[m] || []).push(x); });
+  try { await Promise.all([document.fonts.load("700 24px 'Courier Prime'"), document.fonts.load("600 64px Vollkorn")]); } catch {}
+  const W = 1080, rowH = 190, top = 300, H = top + 12 * rowH + 160;
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const g = cv.getContext("2d");
+  let gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "#47679a"); gr.addColorStop(.12, "#e79a6a"); gr.addColorStop(.16, "#f6ae55"); gr.addColorStop(.17, "#c98b62"); gr.addColorStop(1, "#3c3a4c");
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  g.fillStyle = "#fff1cf"; g.beginPath(); g.arc(W * .78, H * .16 - 6, 26, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "#fbf2e4"; g.textAlign = "center"; g.font = "600 70px Vollkorn, Georgia, serif"; g.fillText(year + " · The Balcony Library", W / 2, 120);
+  g.font = "700 28px 'Courier Prime', monospace"; g.fillText(`${fin.length} ${fin.length === 1 ? "BOOK" : "BOOKS"} FINISHED`, W / 2, 175);
+  const cx = 60, cw = W - 120;
+  gr = g.createLinearGradient(0, top - 30, 0, H - 80); gr.addColorStop(0, "#4a2416"); gr.addColorStop(1, "#2a130c");
+  g.fillStyle = gr; g.fillRect(cx - 20, top - 40, cw + 40, 12 * rowH + 60);
+  for (let m = 0; m < 12; m++) {
+    const y0 = top + m * rowH, base = y0 + rowH - 26;
+    g.fillStyle = "#140a06"; g.fillRect(cx, y0, cw, rowH - 16);
+    g.fillStyle = "#6a4529"; g.fillRect(cx - 8, base, cw + 16, 14);
+    g.fillStyle = "#d8b77c"; g.font = "700 20px 'Courier Prime', monospace"; g.textAlign = "left"; g.fillText(MON[m].toUpperCase(), cx + 14, y0 + 30);
+    const list = by[m] || [];
+    const ws = list.map(x => Math.min(38, Math.max(19, (x.b.pages || 280) / 13)) * 1.7);
+    const total = ws.reduce((a, b) => a + b + 6, 0); const k = total > cw - 120 ? (cw - 120) / total : 1;
+    let x0 = cx + 100;
+    list.forEach((x, i) => {
+      const w = ws[i] * k, h = (74 + (hash(x.b.title) % 22)) * 1.45, c = colorOf(x.b);
+      g.fillStyle = c; g.fillRect(x0, base - h, w, h);
+      g.fillStyle = "rgba(255,255,255,.14)"; g.fillRect(x0, base - h, 2, h);
+      g.save(); g.translate(x0 + w / 2 + 6, base - 12); g.rotate(-Math.PI / 2); g.fillStyle = inkOn(c); g.font = `700 ${Math.max(11, Math.min(17, w * .55))}px 'Courier Prime', monospace`; g.textAlign = "left";
+      let t = x.b.title.toUpperCase(); while (g.measureText(t).width > h - 24 && t.length > 2) t = t.slice(0, -1); g.fillText(t, 0, 0); g.restore();
+      x0 += w + 6 * k;
+    });
+  }
+  return await new Promise(r => cv.toBlob(r, "image/png"));
+}
+
+/* ---- reading now ---- */
+const RN = { b: null, t0: 0, timer: null, lock: null };
+function startReadNow(b) {
+  RN.b = b; RN.t0 = Date.now(); $("#rnTitle").textContent = b.title; $("#rnTea").classList.remove("cold"); $("#rnNote").textContent = "Your tea is warm.";
+  $("#readnow").setAttribute("aria-hidden", "false"); document.documentElement.classList.add("reading");
+  const tick = () => { const s = Math.floor((Date.now() - RN.t0) / 1000); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = s % 60;
+    $("#rnTime").textContent = (h ? h + ":" + pad(m) : m) + ":" + pad(ss);
+    if (s >= 1200 && !$("#rnTea").classList.contains("cold")) { $("#rnTea").classList.add("cold"); $("#rnNote").textContent = "Your tea has gone cold."; } };
+  tick(); RN.timer = setInterval(tick, 1000);
+  try { navigator.wakeLock && navigator.wakeLock.request("screen").then(l => RN.lock = l).catch(() => {}); } catch {}
+  updateSoundUI();
+}
+function endReadNow(log) {
+  clearInterval(RN.timer); try { RN.lock && RN.lock.release(); } catch {} RN.lock = null;
+  document.documentElement.classList.remove("reading"); $("#readnow").setAttribute("aria-hidden", "true");
+  const b = RN.b; RN.b = null; if (!b || !log) { render(); return; }
+  const mins = Math.max(1, Math.round((Date.now() - RN.t0) / 60000));
+  logDay(b, today(), true); const r = cur(b); const d = r && r.days.find(x => x.date === today());
+  if (d) d.minutes = (d.minutes || 0) + mins; save(b); render();
+  toast(mins + (mins === 1 ? " minute" : " minutes") + " added to today");
+}
+
+/* ---- sea sounds ---- */
+const Sound = { ctx: null, master: null, on: false,
+  start() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+      if (!this.ctx) {
+        const ctx = this.ctx = new AC(); const len = ctx.sampleRate * 8; const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+        for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); let last = 0; for (let i = 0; i < len; i++) { last = (last + .02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.4; }
+          const f = 4000; for (let i = 0; i < f; i++) { const a = i / f; d[i] = d[i] * a + d[len - f + i] * (1 - a); } }
+        const waves = ctx.createBufferSource(); waves.buffer = buf; waves.loop = true; waves.loopStart = 4000 / ctx.sampleRate;
+        const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 480;
+        const swell = ctx.createGain(); swell.gain.value = .55;
+        const lfo = ctx.createOscillator(); lfo.frequency.value = .085; const lg = ctx.createGain(); lg.gain.value = .4; lfo.connect(lg); lg.connect(swell.gain);
+        const breeze = ctx.createBufferSource(); breeze.buffer = buf; breeze.loop = true; breeze.playbackRate.value = 1.6;
+        const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1600; bp.Q.value = .5; const bg = ctx.createGain(); bg.gain.value = .07;
+        this.master = ctx.createGain(); this.master.gain.value = 0;
+        waves.connect(lp); lp.connect(swell); swell.connect(this.master); breeze.connect(bp); bp.connect(bg); bg.connect(this.master); this.master.connect(ctx.destination);
+        waves.start(); breeze.start(); lfo.start();
+      }
+      this.ctx.resume(); this.master.gain.setTargetAtTime(.55, this.ctx.currentTime, .9); this.on = true; return true;
+    } catch { return false; }
+  },
+  stop() { if (this.ctx) this.master.gain.setTargetAtTime(0, this.ctx.currentTime, .4); this.on = false; }
+};
+function updateSoundUI() {
+  const btn = $("#soundBtn"); btn.setAttribute("aria-pressed", Sound.on ? "true" : "false"); $("#soundSlash").style.display = Sound.on ? "none" : "";
+  btn.style.color = Sound.on ? "var(--terra)" : ""; const r = $("#rnSound"); if (r) r.textContent = Sound.on ? "Sounds off" : "Sea sounds";
+}
+function toggleSound() {
+  if (Sound.on) Sound.stop(); else if (!Sound.start()) { toast("Sound isn't available here"); return; }
+  try { localStorage.setItem("balcony-sound", Sound.on ? "1" : "0"); } catch {}
+  updateSoundUI(); if (Sound.on) toast("Sea sounds on");
 }
 
 function monthSheet(m) {
@@ -817,6 +1024,8 @@ function menuSheet() {
   const ys = years();
   openSheet(`<div class="stack"><h2>Library card</h2><p class="sub" style="margin:-6px 0 0">A keepsake list of every book you finished in a year.</p>
     <div class="btns">${ys.slice().reverse().map(y => `<button class="btn ${y === S.year ? "primary" : ""}" data-card-year="${y}">${y}</button>`).join("")}</div>
+    <div class="sec"><h3>Year bookcase</h3><p class="sub" style="margin:0">See every month's shelf at once, and save it as a picture.</p>
+    <div class="btns">${ys.slice().reverse().map(y => `<button class="btn" data-yearcase="${y}">${y} bookcase</button>`).join("")}</div></div>
     <div class="sec"><h3>Keep your library safe</h3><p class="sub" style="margin:0">${store.mode === "db" ? "Your books are saved privately to your Claude account." : "Your books are saved on this phone."} A backup file lets you move them anywhere.</p>
     <div class="btns"><button class="btn" data-act="export">Save a backup</button><button class="btn" data-act="import">Restore a backup</button></div></div>
     <div class="sec"><h3>Google Books key (optional)</h3><p class="sub" style="margin:0">Search works without this. A free key from Google Cloud stops Google Books from being busy.</p>
@@ -830,7 +1039,9 @@ function libraryCard(year) {
   openSheet(`<div class="stack"><div class="lcard" id="lcard"><div class="lc-top"><span style="font-size:10px;letter-spacing:.2em">THE BALCONY LIBRARY</span><h3>Reader's card · ${year}</h3><span class="lc-stamp">${list.length ? "CHECKED OUT & RETURNED" : "NO RETURNS YET"}</span></div>
     ${list.length ? `<table><thead><tr><th>No.</th><th>Title</th><th>Returned</th></tr></thead><tbody>${list.map((x, i) => `<tr><td>${pad(i+1)}</td><td>${esc(x.b.title)}${x.i > 0 ? " (re-read)" : ""}<span class="au">${esc(authorStr(x.b))}</span></td><td class="d">${fmt(x.r.end)}</td></tr>`).join("")}</tbody></table>` : `<p style="text-align:center;padding:18px 0">Finished books will be stamped here.</p>`}
     <div class="lc-foot">${list.length} ${list.length === 1 ? "BOOK" : "BOOKS"} · ${days.size} ${days.size === 1 ? "DAY" : "DAYS"} READ</div></div>
-    <div class="btns"><button class="btn primary" data-act="save-card" data-year="${year}" ${list.length ? "" : "disabled"}>Save to Photos</button><button class="btn" data-act="close">Close</button></div></div>`);
+    <div class="btns"><button class="btn primary" data-act="save-card" data-year="${year}" id="lcSave" disabled>${list.length ? "Preparing picture…" : "Save as picture"}</button><button class="btn" data-act="close">Close</button></div></div>`);
+  S.cardBlob = null;
+  if (list.length) cardImage(year).then(bl => { S.cardBlob = bl; const bt = $("#lcSave"); if (bt) { bt.disabled = !bl; bt.textContent = "Save as picture"; } });
 }
 
 /* ================= library card image ================= */
@@ -868,10 +1079,16 @@ async function cardImage(year) {
 }
 
 async function offerFile(filename, blob) {
-  const dl = await use("downloads");
-  if (dl) { try { await dl.save({ filename, data: blob }); return; } catch (e) { if (e && e.code === "declined") return; } }
-  if (!window.claude) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); return; }
-  toast("Saving isn't available in this view");
+  if (window.claude) {
+    const dl = await use("downloads");
+    if (dl) { try { await dl.save({ filename, data: blob }); return true; } catch (e) { return false; } }
+    toast("Saving isn't available in this view"); return false;
+  }
+  try {
+    const file = new File([blob], filename, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] }) && /iPhone|iPad|Android/i.test(navigator.userAgent)) { await navigator.share({ files: [file], title: filename }); return true; }
+  } catch (e) { if (e && e.name === "AbortError") return false; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); return true;
 }
 
 /* ================= search ================= */
@@ -960,6 +1177,7 @@ document.addEventListener("click", async e => {
   if (d.day) { daySheet(d.day); return; }
   if (d.month != null && el.classList.contains("plate")) { monthSheet(+d.month); return; }
   if (d.cardYear) { libraryCard(+d.cardYear); return; }
+  if (d.yearcase) { yearCaseSheet(+d.yearcase); return; }
   if (d.sw) return;
 
   if (d.spine) {
@@ -972,7 +1190,7 @@ document.addEventListener("click", async e => {
   if (d.current) { const b = find(d.current); b && currentSheet(b); return; }
   if (d.open) { const b = find(d.open); b && bookCard(b, d.ri != null ? +d.ri : null); return; }
   if (d.add != null) {
-    const r = S.results[+d.add]; const b = newBook(r, d.as);
+    const r = S.results[+d.add]; const b = newBook(r, d.as === "done" ? "finished" : d.as);
     addBook(b, d.as); return;
   }
   if (d.del) { const b = find(d.id); if (!b) return; (d.del === "quote" ? b.quotes : b.notes).splice(+d.i, 1); save(b); bookCard(b); return; }
@@ -1009,15 +1227,26 @@ document.addEventListener("click", async e => {
       if (!b) break;
       if (el.dataset.confirm !== "1") { el.dataset.confirm = "1"; el.textContent = "Tap again to remove for good"; el.style.color = "var(--terra)"; break; }
       S.books = S.books.filter(x => x.id !== b.id); store.del(b.id); closeSheet(); render(); toast("Removed"); break; }
-    case "save-card": { const y = +d.year; const blob = await cardImage(y); if (blob) offerFile(`balcony-library-${y}.png`, blob); break; }
-    case "export": { const blob = new Blob([JSON.stringify({ app: "balcony-library", version: 1, exported: new Date().toISOString(), books: S.books }, null, 2)], { type: "application/json" }); offerFile(`balcony-library-backup-${today()}.json`, blob); break; }
+    case "save-card": { if (S.cardBlob) offerFile(`balcony-library-card-${d.year}.png`, S.cardBlob); break; }
+    case "save-yearcase": { if (S.yearBlob) offerFile(`balcony-library-${d.year}-bookcase.png`, S.yearBlob); break; }
+    case "export": { const blob = new Blob([JSON.stringify({ app: "balcony-library", version: 1, exported: new Date().toISOString(), books: S.books }, null, 2)], { type: "application/json" });
+      if (await offerFile(`balcony-library-backup-${today()}.json`, blob)) { try { localStorage.setItem(DIRTY, "0"); } catch {} toast("Backup saved"); if (S.tab === "library" && sheet.hidden) render(); } break; }
+    case "past": if (b) pastSheet(b, false); break;
+    case "edit": if (b) editSheet(b); break;
+    case "readnow": if (b) { closeSheet(); setTimeout(() => startReadNow(b), 250); } break;
+    case "rn-done": endReadNow(true); break;
+    case "rn-cancel": endReadNow(false); break;
+    case "rn-sound": toggleSound(); break;
     case "import": $("#importFile").click(); break;
     case "save-key": { const v = ($("#gkey")?.value || "").trim(); try { v ? localStorage.setItem("balcony-gbooks-key", v) : localStorage.removeItem("balcony-gbooks-key"); } catch {} toast(v ? "Key saved on this phone" : "Key removed"); break; }
   }
 });
 $("#menuBtn").addEventListener("click", menuSheet);
+$("#soundBtn").addEventListener("click", toggleSound);
+let soundPref = false; try { soundPref = localStorage.getItem("balcony-sound") === "1"; } catch {}
+if (soundPref) document.addEventListener("pointerdown", function once(e) { document.removeEventListener("pointerdown", once, true); if (!Sound.on && !e.target.closest("#soundBtn")) { Sound.start(); updateSoundUI(); } }, true);
 
-document.addEventListener("visibilitychange", () => { document.body.classList.toggle("paused", document.hidden); if (!document.hidden) render(); });
+document.addEventListener("visibilitychange", () => { document.body.classList.toggle("paused", document.hidden); if (Sound.ctx) { if (document.hidden) Sound.ctx.suspend(); else if (Sound.on) Sound.ctx.resume(); } if (!document.hidden && !RN.b) render(); });
 setInterval(() => { if (S.tab === "library" && sheet.hidden) { const c = document.querySelector(".timechip .stamp"); if (c) c.textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " · Marine Drive"; setTod(); } }, 30000);
 
 render();
