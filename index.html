@@ -73,7 +73,7 @@ h1,h2,h3{font-family:var(--f-display);font-weight:500;margin:0;text-wrap:balance
 .sea{position:absolute;left:0;right:0;top:40%;bottom:0;background:linear-gradient(180deg,var(--sea),var(--sea-deep))}
 .sea::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(180deg,transparent 0 6px,var(--glint) 6px 7px,transparent 7px 13px);opacity:.35;mask:linear-gradient(90deg,transparent 30%,#000 60%,#000 90%,transparent);-webkit-mask:linear-gradient(90deg,transparent 30%,#000 60%,#000 90%,transparent);animation:shimmer 9s ease-in-out infinite alternate}
 .sea::after{content:"";position:absolute;left:76%;top:0;width:70px;height:100%;transform:translateX(-50%);background:linear-gradient(180deg,var(--glint),transparent 85%);opacity:.6;filter:blur(5px)}
-.coast{position:absolute;left:0;top:calc(40% - 13vh);width:100%;height:42vh}
+.coast{position:absolute;left:0;width:max(100vw,560px);height:auto;aspect-ratio:400/140;top:calc(40% - max(100vw,560px) * .105)}
 .coast .city{fill:var(--city)}
 .coast .road{fill:var(--road)}
 .coast .tree{fill:var(--tree)}
@@ -293,7 +293,7 @@ button.plate{cursor:pointer}
 
 <section class="scene" aria-hidden="true">
     <div class="clouds"></div><div class="sun"></div><div class="sea"></div>
-    <svg class="coast" viewBox="0 0 400 140" preserveAspectRatio="none" aria-hidden="true">
+    <svg class="coast" viewBox="0 0 400 140" preserveAspectRatio="xMinYMin meet" aria-hidden="true">
       <g class="city"><rect x="0" y="6" width="16" height="36"/><rect x="18" y="0" width="13" height="42"/><rect x="33" y="14" width="10" height="28"/><rect x="45" y="22" width="22" height="20"/><rect x="69" y="30" width="16" height="12"/><rect x="88" y="34" width="30" height="8"/></g>
       <g class="lamp"><circle cx="9" cy="14" r=".9"/><circle cx="23" cy="9" r=".9"/><circle cx="25" cy="20" r=".9"/><circle cx="37" cy="24" r=".9"/><circle cx="54" cy="30" r=".9"/></g>
       <path class="road" d="M0 42 L130 40 C190 39 230 44 400 62 L400 72 C230 54 190 49 130 48 L0 50 Z"/>
