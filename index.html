@@ -110,6 +110,24 @@ h1,h2,h3{font-family:var(--f-display);font-weight:500;margin:0;text-wrap:balance
 .plate::before,.plate::after{content:"";width:3px;height:3px;border-radius:50%;background:var(--brass)}
 button.plate{cursor:pointer}
 .count{font-size:12px;color:#c9b8a6;font-style:italic}
+.seeall{font-family:var(--f-stamp);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--brass);padding:4px 2px;white-space:nowrap}
+.seeall:hover{text-decoration:underline}
+.row.more{-webkit-mask-image:linear-gradient(90deg,#000 78%,transparent);mask-image:linear-gradient(90deg,#000 78%,transparent)}
+.bookend{flex:0 0 auto;align-self:stretch;margin-left:4px;width:46px;border-radius:4px;border:1px dashed rgba(216,183,124,.55);color:var(--brass);font-family:var(--f-stamp);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.3;display:flex;align-items:center;justify-content:center;text-align:center;padding:4px}
+.browseall{width:100%;padding:10px;border-radius:6px;border:1px solid rgba(216,183,124,.4);color:var(--brass);font-family:var(--f-stamp);font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chips::-webkit-scrollbar{display:none}
+.chipbtn{flex:none;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:13px;white-space:nowrap;color:var(--ink-2)}
+.chipbtn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.bgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 12px}
+.bitem{display:flex;flex-direction:column;gap:6px;text-align:left;min-width:0}
+.bitem .cover{width:100%;height:auto;aspect-ratio:2/3}
+.bitem .bt{font-family:var(--f-display);font-size:14px;font-weight:600;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bitem .ba{font-size:11.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:-4px}
+.bitem .bd{font-family:var(--f-stamp);font-size:10.5px;color:var(--terra);margin-top:-4px}
+.bgroup{display:flex;flex-direction:column;gap:10px}
+.bgroup h3{font-family:var(--f-stamp);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);font-weight:700;display:flex;justify-content:space-between}
+.brsearch{box-shadow:none}
 .row{display:flex;align-items:flex-end;gap:4px;min-height:104px;overflow-x:auto;padding:10px 4px 0;scrollbar-width:none}
 .row::-webkit-scrollbar{display:none}
 .plank{height:10px;margin:0 -8px;border-radius:2px;background:linear-gradient(180deg,#6a4529,#3a2314);box-shadow:0 3px 6px rgba(0,0,0,.6)}
@@ -414,7 +432,7 @@ const store = {
   mode: "local", col: null, chains: {},
   async init() {
     const cached = local.read();
-    if (cached) S.books = cached;
+    if (cached) { S.books = cached; render(); }
     const [db, user] = await Promise.all([use("db"), use("user")]);
     if (!db || !user) return;
     let id = null; try { id = await user.id(); } catch {}
@@ -532,6 +550,7 @@ function render() {
   else if (S.tab === "log") view.innerHTML = logHTML();
   else view.innerHTML = searchHTML();
   S.lastArrive = null;
+  requestAnimationFrame(() => document.querySelectorAll(".case .row").forEach(fadeRow));
 }
 
 function libraryHTML(tod) {
@@ -550,7 +569,7 @@ function libraryHTML(tod) {
   const monthBays = months.map(m => {
     const list = byMonth[m] || [];
     const spines = list.map(x => spineHTML(x.b, { kind: "fin", ri: x.i, reread: x.i > 0, arrive: S.lastArrive === x.b.id + ":" + x.i })).join("");
-    return `<div class="bay"><div class="bayhead"><button class="plate" data-month="${m}">${MONTH[m]}</button><span class="count">${list.length ? list.length + (list.length === 1 ? " book" : " books") : "Room for more"}</span></div>
+    return `<div class="bay"><div class="bayhead"><button class="plate" data-month="${m}">${MONTH[m]}</button>${list.length > 5 ? `<button class="seeall" data-month="${m}">All ${list.length} →</button>` : `<span class="count">${list.length ? list.length + (list.length === 1 ? " book" : " books") : "Room for more"}</span>`}</div>
       <div class="row">${spines || `<div class="ghost">Finished books land here</div>`}</div><div class="plank"></div></div>`;
   }).join("");
 
@@ -577,12 +596,13 @@ function libraryHTML(tod) {
       <div class="casehead"><span class="stamp">My bookcase</span>
         <div class="yearpick"><button data-year="${ys[yi-1] ?? ""}" ${yi > 0 ? "" : "disabled"} aria-label="Previous year">${ICON.left}</button><span>${S.year}</span><button data-year="${ys[yi+1] ?? ""}" ${yi < ys.length - 1 ? "" : "disabled"} aria-label="Next year">${ICON.right}</button></div></div>
       <div class="bay"><div class="tier">
-        <div><div class="bayhead"><span class="plate">Want to read</span><span class="count">${want.length}</span></div>
-          <div class="row">${want.map(b => spineHTML(b, { kind: "want" })).join("") || `<div class="ghost">Add books you want to read</div>`}</div></div>
-        <div><div class="bayhead"><span class="plate" style="letter-spacing:.08em">Set aside</span></div>
-          <div class="aside-nook">${aside.slice(0,4).map(b => { const c = colorOf(b); return `<button class="flat" data-spine="${b.id}" data-kind="aside" style="background:${c};color:${inkOn(c)}"><span>${esc(b.title)}</span></button>`; }).join("") || `<div class="ghost" style="height:84px">Paused books rest here</div>`}</div></div>
+        <div><div class="bayhead"><button class="plate" data-browse="want">Want to read</button>${want.length ? `<button class="seeall" data-browse="want">All ${want.length} →</button>` : `<span class="count">0</span>`}</div>
+          <div class="row">${want.map(b => spineHTML(b, { kind: "want" })).join("")}${want.length > 7 ? `<button class="bookend" data-browse="want">See all ${want.length}</button>` : ""}${want.length ? "" : `<div class="ghost">Add books you want to read</div>`}</div></div>
+        <div><div class="bayhead"><button class="plate" style="letter-spacing:.08em" data-browse="aside">Set aside</button></div>
+          <div class="aside-nook">${aside.slice(0, aside.length > 4 ? 3 : 4).map(b => { const c = colorOf(b); return `<button class="flat" data-spine="${b.id}" data-kind="aside" style="background:${c};color:${inkOn(c)}"><span>${esc(b.title)}</span></button>`; }).join("")}${aside.length > 4 ? `<button class="seeall" data-browse="aside" style="text-align:center">+${aside.length - 3} more</button>` : ""}${aside.length ? "" : `<div class="ghost" style="height:84px">Paused books rest here</div>`}</div></div>
       </div><div class="plank"></div></div>
       ${monthBays || `<div class="empty-months">No books finished in ${S.year}.</div>`}
+      ${S.books.some(b => b.readings.some(r => r.end)) ? `<button class="browseall" data-browse="finished">Browse all finished books</button>` : ""}
     </section>
 
     <section class="table" aria-label="Tea table">
@@ -663,6 +683,7 @@ function openSheet(html, closeCb) {
   sheet.scrollTop = 0;
 }
 function closeSheet() {
+  S.back = null;
   sheet.classList.remove("on"); backdrop.classList.remove("on");
   document.documentElement.classList.remove("ritual");
   const cb = onClose; onClose = null;
@@ -1013,6 +1034,62 @@ function toggleSound() {
   updateSoundUI(); if (Sound.on) toast("Sea sounds on");
 }
 
+function fadeRow(r) { r.classList.toggle("more", r.scrollLeft + r.clientWidth < r.scrollWidth - 6); }
+document.addEventListener("scroll", e => { const t = e.target; if (t && t.classList && t.classList.contains("row")) fadeRow(t); }, true);
+
+const BR = { kind: "want", q: "", sort: "recent", year: "all" };
+function browseSheet(kind, keep) {
+  S.back = null;
+  if (keep) Object.assign(BR, keep); else Object.assign(BR, { kind, q: "", sort: kind === "finished" ? "newest" : "recent", year: kind === "finished" ? String(S.year) : "all" });
+  const title = { want: "Want to read", aside: "Set aside", finished: "Finished books" }[BR.kind];
+  const sorts = BR.kind === "finished" ? [["newest", "Newest first"], ["oldest", "Oldest first"], ["title", "Title"], ["author", "Author"]]
+    : [["recent", "Recently added"], ["oldest", "Oldest first"], ["title", "Title"], ["author", "Author"]];
+  const yrs = years().filter(y => finishedIn(y).length).reverse();
+  openSheet(`<div class="stack">
+    <div><span class="stamp" style="color:var(--terra)">Your shelf</span><h2>${title}</h2><p class="sub" id="brCount" style="margin:2px 0 0"></p></div>
+    <label class="searchbar brsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="brQ" type="search" placeholder="Search by title or author" value="${esc(BR.q)}" autocomplete="off" enterkeyhint="search"></label>
+    ${BR.kind === "finished" && yrs.length > 1 ? `<div class="chips" id="brYears">${["all", ...yrs.map(String)].map(y => `<button class="chipbtn ${BR.year === y ? "on" : ""}" data-bryear="${y}">${y === "all" ? "All years" : y}</button>`).join("")}</div>` : ""}
+    <div class="chips" id="brSorts">${sorts.map(([k, l]) => `<button class="chipbtn ${BR.sort === k ? "on" : ""}" data-brsort="${k}">${l}</button>`).join("")}</div>
+    <div id="brList"></div>
+    <div class="btns">${BR.kind === "want" ? `<button class="btn" data-act="go-search">+ Add a book</button>` : ""}<button class="btn" data-act="close-all">Close</button></div></div>`);
+  fillBrowse();
+  $("#brQ").addEventListener("input", e => { BR.q = e.target.value; fillBrowse(); });
+}
+function fillBrowse() {
+  const q = BR.q.trim().toLowerCase();
+  const match = b => !q || (b.title + " " + authorStr(b)).toLowerCase().includes(q);
+  const by = (a, b, k) => k === "title" ? a.title.localeCompare(b.title) : authorStr(a).localeCompare(authorStr(b));
+  const item = (b, attrs, extra) => `<button class="bitem" ${attrs}>${coverHTML(b, "m")}<span class="bt">${esc(b.title)}</span><span class="ba">${esc(authorStr(b))}</span>${extra || ""}</button>`;
+  let html = "", total = 0, shown = 0;
+  if (BR.kind === "finished") {
+    let all = [];
+    S.books.forEach(b => b.readings.forEach((r, i) => { if (r.end) all.push({ b, r, i }); }));
+    if (BR.year !== "all") all = all.filter(x => String(parse(x.r.end).getFullYear()) === BR.year);
+    total = all.length;
+    const list = all.filter(x => match(x.b));
+    shown = list.length;
+    if (BR.sort === "title" || BR.sort === "author") {
+      list.sort((x, y) => by(x.b, y.b, BR.sort));
+      html = `<div class="bgrid">${list.map(x => item(x.b, `data-spine="${x.b.id}" data-kind="fin" data-ri="${x.i}"`, `<span class="bd">${fmtY(x.r.end)}${x.i > 0 ? " · re-read" : ""}</span>`)).join("")}</div>`;
+    } else {
+      list.sort((x, y) => BR.sort === "oldest" ? (x.r.end < y.r.end ? -1 : 1) : (x.r.end < y.r.end ? 1 : -1));
+      const groups = [];
+      list.forEach(x => { const d = parse(x.r.end), k = MONTH[d.getMonth()] + " " + d.getFullYear(); const g = groups[groups.length - 1]; if (g && g.k === k) g.items.push(x); else groups.push({ k, items: [x] }); });
+      html = groups.map(g => `<div class="bgroup"><h3><span>${g.k}</span><span>${g.items.length}</span></h3><div class="bgrid">${g.items.map(x => item(x.b, `data-spine="${x.b.id}" data-kind="fin" data-ri="${x.i}"`, `<span class="bd">${fmt(x.r.end)}${x.i > 0 ? " · re-read" : ""}</span>`)).join("")}</div></div>`).join("");
+    }
+  } else {
+    const all = S.books.filter(b => b.status === BR.kind);
+    total = all.length;
+    const list = all.filter(match);
+    shown = list.length;
+    list.sort((a, b) => BR.sort === "title" || BR.sort === "author" ? by(a, b, BR.sort) : BR.sort === "oldest" ? a.addedAt - b.addedAt : b.addedAt - a.addedAt);
+    html = `<div class="bgrid">${list.map(b => item(b, `data-spine="${b.id}" data-kind="${BR.kind}"`, b.why ? `<span class="bd" style="color:var(--ink-3);font-style:italic;font-family:var(--f-body)">${esc(b.why.length > 34 ? b.why.slice(0, 32) + "…" : b.why)}</span>` : "")).join("")}</div>`;
+  }
+  if (!shown) html = total ? `<p class="sub">No books match “${esc(BR.q)}”.</p>` : `<p class="sub">Nothing on this shelf yet.</p>`;
+  $("#brList").innerHTML = html;
+  $("#brCount").textContent = q ? `${shown} of ${total} ${total === 1 ? "book" : "books"}` : `${total} ${total === 1 ? "book" : "books"}`;
+}
+
 function monthSheet(m) {
   const list = finishedIn(S.year).filter(x => parse(x.r.end).getMonth() === m);
   openSheet(`<div class="stack"><h2>${MONTH[m]} ${S.year}</h2><p class="sub" style="margin:-6px 0 0">${list.length} ${list.length === 1 ? "book" : "books"} finished</p>
@@ -1181,8 +1258,13 @@ document.addEventListener("click", async e => {
   if (d.yearcase) { yearCaseSheet(+d.yearcase); return; }
   if (d.sw) return;
 
+  if (d.browse) { browseSheet(d.browse); return; }
+  if (d.brsort) { BR.sort = d.brsort; document.querySelectorAll("[data-brsort]").forEach(x => x.classList.toggle("on", x === el)); fillBrowse(); return; }
+  if (d.bryear) { BR.year = d.bryear; document.querySelectorAll("[data-bryear]").forEach(x => x.classList.toggle("on", x === el)); fillBrowse(); return; }
   if (d.spine) {
     const b = find(d.spine); if (!b) return;
+    const fromBrowse = !!el.closest("#brList"); const keep = fromBrowse ? { ...BR } : null;
+    if (fromBrowse) { if (d.kind === "fin") bookCard(b, +d.ri); else pullSheet(b, el.getBoundingClientRect(), null); S.back = keep; return; }
     if (d.kind === "fin") { bookCard(b, +d.ri, el.getBoundingClientRect()); return; }
     el.classList.add("pulling");
     setTimeout(() => pullSheet(b, el.getBoundingClientRect(), el), 230);
@@ -1198,8 +1280,9 @@ document.addEventListener("click", async e => {
 
   const b = d.id ? find(d.id) : null;
   switch (d.act) {
-    case "close": closeSheet(); break;
-    case "go-search": S.tab = "search"; render(); break;
+    case "close": if (S.back) { browseSheet(S.back.kind, S.back); } else closeSheet(); break;
+    case "close-all": closeSheet(); break;
+    case "go-search": closeSheet(); S.tab = "search"; render(); window.scrollTo(0, 0); setTimeout(() => $("#q")?.focus(), 50); break;
     case "sample": S.sample = true; S.books = sampleBooks(); render(); break;
     case "clear-sample": S.sample = false; S.books = local.read() || []; render(); break;
     case "manual": manualSheet(); break;
