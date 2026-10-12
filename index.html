@@ -559,10 +559,9 @@ function cloudSection() {
   const sent = AUTH.email;
   return `<form class="sec" id="authForm"><h3>Save to your account</h3><p class="sub" style="margin:0">Sign in with the same email you use for Clearing. Your books will be saved online and show up on every device.</p>
     <label class="field"><span>Email</span><input id="au-email" type="email" autocomplete="email" value="${esc(sent || "")}" required ${sent ? "readonly" : ""}></label>
-    ${sent ? `<label class="field"><span>Code from the email</span><input id="au-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Type the code" required></label>
-      <p class="sub" style="margin:0;font-size:13px">On a laptop you can tap the link in the email instead.</p>` : ""}
+    ${sent ? `<div class="notice" style="background:var(--sage-soft)">We've sent a sign-in link to <b>${esc(sent)}</b>. Open the email on this phone and tap the link. The Balcony Library opens already signed in, and your books start saving.</div>` : ""}
     <p class="sub" id="au-msg" style="margin:0;font-size:13px;color:var(--terra)"></p>
-    <div class="btns">${sent ? `<button class="btn primary" type="submit" data-mode="verify">Sign in</button><button class="btn quiet" type="button" data-act="auth-reset">Use a different email</button>` : `<button class="btn primary" type="submit" data-mode="send">Email me a sign-in code</button>`}</div></form>`;
+    <div class="btns">${sent ? `<button class="btn" type="submit" data-mode="send">Send the link again</button><button class="btn quiet" type="button" data-act="auth-reset">Use a different email</button>` : `<button class="btn primary" type="submit" data-mode="send">Email me a sign-in link</button>`}</div></form>`;
 }
 
 /* ================= book model ================= */
@@ -1431,13 +1430,13 @@ $("#menuBtn").addEventListener("click", menuSheet);
 document.addEventListener("submit", async e => {
   if (e.target.id !== "authForm") return;
   e.preventDefault();
-  const mode = e.submitter ? e.submitter.dataset.mode : (AUTH.email ? "verify" : "send");
+  const mode = e.submitter ? e.submitter.dataset.mode : "send";
   const msg = $("#au-msg");
   try {
     if (mode === "send") {
       const email = $("#au-email").value.trim(); msg.textContent = "Sending…";
-      await cloud.sendCode(email); AUTH.email = email; menuSheet(); setTimeout(() => $("#au-code")?.focus(), 350);
-      toast("Check your email for the code");
+      await cloud.sendCode(email); AUTH.email = email; menuSheet();
+      toast("Sign-in link sent. Check your email");
     } else {
       msg.textContent = "Signing in…";
       await cloud.verifyCode(AUTH.email, $("#au-code").value.replace(/\s/g, ""));
@@ -1445,7 +1444,7 @@ document.addEventListener("submit", async e => {
     }
   } catch (err) {
     const m = String(err && err.message || "");
-    msg.textContent = /expired|invalid/i.test(m) ? "That code didn't work or has expired. Check the latest email, or tap “Use a different email” to send a new one." : /rate|seconds/i.test(m) ? "Please wait a minute before asking for another code." : (m || "Couldn't sign in. Check your connection and try again.");
+    msg.textContent = /expired|invalid/i.test(m) ? "That link didn't work or has expired. Tap “Send the link again”." : /rate|seconds/i.test(m) ? "Please wait a minute before asking for another link." : (m || "Couldn't sign in. Check your connection and try again.");
   }
 });
 $("#soundBtn").addEventListener("click", toggleSound);
