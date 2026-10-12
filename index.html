@@ -535,16 +535,18 @@ const cloud = {
     } catch (e) { this.error = "Couldn't sync just now. Your books are safe on this phone."; render(); }
     finally { this.syncing = false; }
   },
-  async signIn(email, password, create) {
-    const fn = create ? this.client.auth.signUp({ email, password }) : this.client.auth.signInWithPassword({ email, password });
-    const { data, error } = await fn;
+  async sendCode(email) {
+    const { error } = await this.client.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
     if (error) throw error;
-    if (create && !data.session) return "confirm";
-    return "ok";
+  },
+  async verifyCode(email, token) {
+    const { error } = await this.client.auth.verifyOtp({ email, token, type: "email" });
+    if (error) throw error;
   },
   async signOut() { await this.client.auth.signOut(); this.user = null; render(); }
 };
 function local_write() { local.write(S.books); }
+const AUTH = { email: "" };
 function cloudSection() {
   if (!cloud.enabled) return "";
   if (!cloud.ready) return `<div class="sec"><h3>Your account</h3><p class="sub" style="margin:0">${esc(cloud.error || "Connecting…")}</p></div>`;
@@ -554,11 +556,13 @@ function cloudSection() {
       <p class="sub" style="margin:0;font-size:13px">${n ? n + " change" + (n === 1 ? "" : "s") + " waiting to sync" : cloud.lastSync ? "Last synced " + cloud.lastSync.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""}${cloud.error ? " · " + esc(cloud.error) : ""}</p>
       <div class="btns"><button class="btn" data-act="sync-now">Sync now</button><button class="btn quiet" data-act="sign-out">Sign out</button></div></div>`;
   }
-  return `<form class="sec" id="authForm"><h3>Save to your account</h3><p class="sub" style="margin:0">Sign in to save your books online and see them on every device. Use the same email and password as Clearing, or create a new account.</p>
-    <label class="field"><span>Email</span><input id="au-email" type="email" autocomplete="email" required></label>
-    <label class="field"><span>Password</span><input id="au-pass" type="password" autocomplete="current-password" minlength="6" required></label>
+  const sent = AUTH.email;
+  return `<form class="sec" id="authForm"><h3>Save to your account</h3><p class="sub" style="margin:0">Sign in with the same email you use for Clearing. Your books will be saved online and show up on every device.</p>
+    <label class="field"><span>Email</span><input id="au-email" type="email" autocomplete="email" value="${esc(sent || "")}" required ${sent ? "readonly" : ""}></label>
+    ${sent ? `<label class="field"><span>Code from the email</span><input id="au-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Type the code" required></label>
+      <p class="sub" style="margin:0;font-size:13px">On a laptop you can tap the link in the email instead.</p>` : ""}
     <p class="sub" id="au-msg" style="margin:0;font-size:13px;color:var(--terra)"></p>
-    <div class="btns"><button class="btn primary" type="submit" data-mode="in">Sign in</button><button class="btn" type="submit" data-mode="up">Create account</button></div></form>`;
+    <div class="btns">${sent ? `<button class="btn primary" type="submit" data-mode="verify">Sign in</button><button class="btn quiet" type="button" data-act="auth-reset">Use a different email</button>` : `<button class="btn primary" type="submit" data-mode="send">Email me a sign-in code</button>`}</div></form>`;
 }
 
 /* ================= book model ================= */
@@ -1418,6 +1422,7 @@ document.addEventListener("click", async e => {
     case "rn-sound": toggleSound(); break;
     case "import": $("#importFile").click(); break;
     case "sync-now": await cloud.pull(); toast(cloud.error ? cloud.error : "Synced"); menuSheet(); break;
+    case "auth-reset": AUTH.email = ""; menuSheet(); break;
     case "sign-out": await cloud.signOut(); closeSheet(); toast("Signed out. Your books stay on this phone."); break;
     case "save-key": { const v = ($("#gkey")?.value || "").trim(); try { v ? localStorage.setItem("balcony-gbooks-key", v) : localStorage.removeItem("balcony-gbooks-key"); } catch {} toast(v ? "Key saved on this phone" : "Key removed"); break; }
   }
@@ -1426,15 +1431,21 @@ $("#menuBtn").addEventListener("click", menuSheet);
 document.addEventListener("submit", async e => {
   if (e.target.id !== "authForm") return;
   e.preventDefault();
-  const create = e.submitter && e.submitter.dataset.mode === "up";
-  const msg = $("#au-msg"); msg.textContent = create ? "Creating your account…" : "Signing in…";
+  const mode = e.submitter ? e.submitter.dataset.mode : (AUTH.email ? "verify" : "send");
+  const msg = $("#au-msg");
   try {
-    const r = await cloud.signIn($("#au-email").value.trim(), $("#au-pass").value, create);
-    if (r === "confirm") { msg.textContent = "Check your email and tap the confirmation link, then come back and sign in."; return; }
-    closeSheet(); toast("Signed in. Saving your books…");
+    if (mode === "send") {
+      const email = $("#au-email").value.trim(); msg.textContent = "Sending…";
+      await cloud.sendCode(email); AUTH.email = email; menuSheet(); setTimeout(() => $("#au-code")?.focus(), 350);
+      toast("Check your email for the code");
+    } else {
+      msg.textContent = "Signing in…";
+      await cloud.verifyCode(AUTH.email, $("#au-code").value.replace(/\s/g, ""));
+      AUTH.email = ""; closeSheet(); toast("Signed in. Saving your books…");
+    }
   } catch (err) {
     const m = String(err && err.message || "");
-    msg.textContent = /invalid login/i.test(m) ? "That email and password don't match. Try again, or create an account." : /not confirmed/i.test(m) ? "Confirm your email first (check your inbox), then sign in." : /already registered/i.test(m) ? "That email already has an account. Tap Sign in instead." : (m || "Couldn't sign in. Check your connection and try again.");
+    msg.textContent = /expired|invalid/i.test(m) ? "That code didn't work or has expired. Check the latest email, or tap “Use a different email” to send a new one." : /rate|seconds/i.test(m) ? "Please wait a minute before asking for another code." : (m || "Couldn't sign in. Check your connection and try again.");
   }
 });
 $("#soundBtn").addEventListener("click", toggleSound);
