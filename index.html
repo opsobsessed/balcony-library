@@ -450,7 +450,7 @@ const store = {
   put(b) {
     if (S.sample) return;
     local.write(S.books);
-    if (this.mode !== "db") return;
+    if (this.mode !== "db") { cloud.push(b); return; }
     const body = JSON.parse(JSON.stringify(b));
     this.chains[b.id] = (this.chains[b.id] || Promise.resolve()).then(() => this.col.doc(b.id).set(body)).catch(() => toast("Couldn't save just now. It's kept on this phone."));
   },
@@ -458,7 +458,7 @@ const store = {
     if (S.sample) return;
     bump();
     local.write(S.books);
-    if (this.mode !== "db") return;
+    if (this.mode !== "db") { cloud.remove(id); return; }
     this.chains[id] = (this.chains[id] || Promise.resolve()).then(() => this.col.doc(id).delete()).catch(() => {});
   }
 };
@@ -466,6 +466,100 @@ const DIRTY = "balcony-unbacked";
 const dirty = () => { try { return +localStorage.getItem(DIRTY) || 0; } catch { return 0; } };
 const bump = () => { if (S.sample) return; try { localStorage.setItem(DIRTY, dirty() + 1); } catch {} };
 function save(b) { b.updatedAt = Date.now(); store.put(b); bump(); }
+
+/* ================= Supabase sync (hosted app only) ================= */
+const SB_URL = "https://fospnxnkjlybdpnyrkiq.supabase.co", SB_KEY = "sb_publishable_MkmqVzAOLOOXdkyUNiN4Hg_7i5QUvMO";
+const PENDING = "balcony-pending";
+const cloud = {
+  client: null, user: null, ready: false, syncing: false, lastSync: null, error: "",
+  get enabled() { return !window.claude && !SB_URL.startsWith("__"); },
+  pending() { try { return JSON.parse(localStorage.getItem(PENDING) || "{}"); } catch { return {}; } },
+  setPending(p) { try { localStorage.setItem(PENDING, JSON.stringify(p)); } catch {} },
+  mark(id, kind) { const p = this.pending(); p[id] = kind; this.setPending(p); },
+  clear(id) { const p = this.pending(); delete p[id]; this.setPending(p); },
+  async init() {
+    if (!this.enabled) return;
+    try {
+      await new Promise((res, rej) => { if (window.supabase) return res(); const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+      this.client = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: "balcony-auth" } });
+      const { data } = await this.client.auth.getSession();
+      this.user = data.session ? data.session.user : null;
+      this.ready = true;
+      this.client.auth.onAuthStateChange((_e, session) => { const was = this.user && this.user.id; this.user = session ? session.user : null; if (this.user && this.user.id !== was) this.pull(); else render(); });
+      if (this.user) await this.pull(); else render();
+    } catch (e) { this.error = "Couldn't connect to your account right now."; render(); }
+  },
+  row(b) { return { id: b.id, user_id: this.user.id, data: b, deleted: false, updated_at: new Date(b.updatedAt || b.addedAt || Date.now()).toISOString() }; },
+  async push(b) {
+    if (!this.client || !this.user || S.sample) return;
+    this.mark(b.id, "put");
+    const { error } = await this.client.from("balcony_books").upsert(this.row(JSON.parse(JSON.stringify(b))), { onConflict: "user_id,id" });
+    if (!error) { this.clear(b.id); this.lastSync = new Date(); } else { this.error = "Some changes are waiting to sync."; }
+  },
+  async remove(id) {
+    if (!this.client || !this.user || S.sample) return;
+    this.mark(id, "del");
+    const { error } = await this.client.from("balcony_books").upsert({ id, user_id: this.user.id, data: {}, deleted: true, updated_at: new Date().toISOString() }, { onConflict: "user_id,id" });
+    if (!error) { this.clear(id); this.lastSync = new Date(); }
+  },
+  async pull(quiet) {
+    if (!this.client || !this.user || this.syncing) return;
+    this.syncing = true; this.error = "";
+    try {
+      const { data: rows, error } = await this.client.from("balcony_books").select("id,data,deleted,updated_at");
+      if (error) throw error;
+      const local = new Map(S.books.map(b => [b.id, b]));
+      const pend = this.pending();
+      const toPush = [];
+      const remoteIds = new Set();
+      for (const r of rows) {
+        remoteIds.add(r.id);
+        const lb = local.get(r.id), rt = Date.parse(r.updated_at) || 0;
+        if (r.deleted) {
+          if (lb && pend[r.id] !== "put") local.delete(r.id);
+          else if (lb) toPush.push(lb);
+          continue;
+        }
+        const lt = lb ? (lb.updatedAt || lb.addedAt || 0) : -1;
+        if (!lb && pend[r.id] === "del") continue;
+        if (!lb || rt > lt) local.set(r.id, r.data);
+        else if (lt > rt) toPush.push(lb);
+      }
+      for (const [id, b] of local) if (!remoteIds.has(id)) toPush.push(b);
+      S.books = [...local.values()];
+      if (!S.sample) local_write();
+      for (const b of toPush) await this.push(b);
+      for (const [id, kind] of Object.entries(this.pending())) if (kind === "del") await this.remove(id);
+      this.lastSync = new Date();
+      if (!quiet) render();
+    } catch (e) { this.error = "Couldn't sync just now. Your books are safe on this phone."; render(); }
+    finally { this.syncing = false; }
+  },
+  async signIn(email, password, create) {
+    const fn = create ? this.client.auth.signUp({ email, password }) : this.client.auth.signInWithPassword({ email, password });
+    const { data, error } = await fn;
+    if (error) throw error;
+    if (create && !data.session) return "confirm";
+    return "ok";
+  },
+  async signOut() { await this.client.auth.signOut(); this.user = null; render(); }
+};
+function local_write() { local.write(S.books); }
+function cloudSection() {
+  if (!cloud.enabled) return "";
+  if (!cloud.ready) return `<div class="sec"><h3>Your account</h3><p class="sub" style="margin:0">${esc(cloud.error || "Connecting…")}</p></div>`;
+  if (cloud.user) {
+    const n = Object.keys(cloud.pending()).length;
+    return `<div class="sec"><h3>Your account</h3><p class="sub" style="margin:0">Signed in as <b>${esc(cloud.user.email || "")}</b>. Every change saves to your account, so your books are safe even if you lose this phone, and they show up on any device you sign in on.</p>
+      <p class="sub" style="margin:0;font-size:13px">${n ? n + " change" + (n === 1 ? "" : "s") + " waiting to sync" : cloud.lastSync ? "Last synced " + cloud.lastSync.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""}${cloud.error ? " · " + esc(cloud.error) : ""}</p>
+      <div class="btns"><button class="btn" data-act="sync-now">Sync now</button><button class="btn quiet" data-act="sign-out">Sign out</button></div></div>`;
+  }
+  return `<form class="sec" id="authForm"><h3>Save to your account</h3><p class="sub" style="margin:0">Sign in to save your books online and see them on every device. Use the same email and password as Clearing, or create a new account.</p>
+    <label class="field"><span>Email</span><input id="au-email" type="email" autocomplete="email" required></label>
+    <label class="field"><span>Password</span><input id="au-pass" type="password" autocomplete="current-password" minlength="6" required></label>
+    <p class="sub" id="au-msg" style="margin:0;font-size:13px;color:var(--terra)"></p>
+    <div class="btns"><button class="btn primary" type="submit" data-mode="in">Sign in</button><button class="btn" type="submit" data-mode="up">Create account</button></div></form>`;
+}
 
 /* ================= book model ================= */
 function newBook(info, status) {
@@ -545,7 +639,7 @@ const view = $("#view");
 function render() {
   document.querySelectorAll(".nav button").forEach(n => n.setAttribute("aria-current", n.dataset.tab === S.tab ? "page" : "false"));
   const tod = setTod();
-  $("#subline").textContent = S.sample ? "Sample shelf · not saved" : (store.mode === "db" ? "Private · saved to your account" : "Private · saved on this phone");
+  $("#subline").textContent = S.sample ? "Sample shelf · not saved" : (store.mode === "db" || cloud.user ? "Private · saved to your account" : "Private · saved on this phone");
   if (S.tab === "library") view.innerHTML = libraryHTML(tod);
   else if (S.tab === "log") view.innerHTML = logHTML();
   else view.innerHTML = searchHTML();
@@ -589,7 +683,7 @@ function libraryHTML(tod) {
 
   return `
   <div class="timechip">${tod === "night" ? ICON.moon : ICON.sun}<span class="stamp" style="font-weight:700">${esc(time)} · Marine Drive</span></div>
-  ${!S.sample && store.mode !== "db" && dirty() > 0 && S.books.length ? `<div class="stage" style="margin-top:10px;gap:0"><div class="backup"><span><b>${dirty()}</b> ${dirty() === 1 ? "change" : "changes"} since your last backup</span><button data-act="export">Save backup</button></div></div>` : ""}
+  ${!S.sample && store.mode !== "db" && !cloud.user && dirty() > 0 && S.books.length ? `<div class="stage" style="margin-top:10px;gap:0"><div class="backup"><span><b>${dirty()}</b> ${dirty() === 1 ? "change" : "changes"} since your last backup</span><button data-act="export">Save backup</button></div></div>` : ""}
   ${S.sample ? `<div class="banner" style="position:relative;z-index:3"><span>You're looking at sample books. Nothing here is saved.</span><button data-act="clear-sample">Start my shelf</button></div>` : ""}
   <div class="stage">
     <section class="case" aria-label="Bookcase">
@@ -1104,6 +1198,7 @@ function menuSheet() {
     <div class="btns">${ys.slice().reverse().map(y => `<button class="btn ${y === S.year ? "primary" : ""}" data-card-year="${y}">${y}</button>`).join("")}</div>
     <div class="sec"><h3>Year bookcase</h3><p class="sub" style="margin:0">See every month's shelf at once, and save it as a picture.</p>
     <div class="btns">${ys.slice().reverse().map(y => `<button class="btn" data-yearcase="${y}">${y} bookcase</button>`).join("")}</div></div>
+    ${cloudSection()}
     <div class="sec"><h3>Keep your library safe</h3><p class="sub" style="margin:0">${store.mode === "db" ? "Your books are saved privately to your Claude account." : "Your books are saved on this phone."} A backup file lets you move them anywhere.</p>
     <div class="btns"><button class="btn" data-act="export">Save a backup</button><button class="btn" data-act="import">Restore a backup</button></div></div>
     <div class="sec"><h3>Google Books key (optional)</h3><p class="sub" style="margin:0">Search works without this. A free key from Google Cloud stops Google Books from being busy.</p>
@@ -1322,19 +1417,37 @@ document.addEventListener("click", async e => {
     case "rn-cancel": endReadNow(false); break;
     case "rn-sound": toggleSound(); break;
     case "import": $("#importFile").click(); break;
+    case "sync-now": await cloud.pull(); toast(cloud.error ? cloud.error : "Synced"); menuSheet(); break;
+    case "sign-out": await cloud.signOut(); closeSheet(); toast("Signed out. Your books stay on this phone."); break;
     case "save-key": { const v = ($("#gkey")?.value || "").trim(); try { v ? localStorage.setItem("balcony-gbooks-key", v) : localStorage.removeItem("balcony-gbooks-key"); } catch {} toast(v ? "Key saved on this phone" : "Key removed"); break; }
   }
 });
 $("#menuBtn").addEventListener("click", menuSheet);
+document.addEventListener("submit", async e => {
+  if (e.target.id !== "authForm") return;
+  e.preventDefault();
+  const create = e.submitter && e.submitter.dataset.mode === "up";
+  const msg = $("#au-msg"); msg.textContent = create ? "Creating your account…" : "Signing in…";
+  try {
+    const r = await cloud.signIn($("#au-email").value.trim(), $("#au-pass").value, create);
+    if (r === "confirm") { msg.textContent = "Check your email and tap the confirmation link, then come back and sign in."; return; }
+    closeSheet(); toast("Signed in. Saving your books…");
+  } catch (err) {
+    const m = String(err && err.message || "");
+    msg.textContent = /invalid login/i.test(m) ? "That email and password don't match. Try again, or create an account." : /not confirmed/i.test(m) ? "Confirm your email first (check your inbox), then sign in." : /already registered/i.test(m) ? "That email already has an account. Tap Sign in instead." : (m || "Couldn't sign in. Check your connection and try again.");
+  }
+});
 $("#soundBtn").addEventListener("click", toggleSound);
 let soundPref = false; try { soundPref = localStorage.getItem("balcony-sound") === "1"; } catch {}
 if (soundPref) document.addEventListener("pointerdown", function once(e) { document.removeEventListener("pointerdown", once, true); if (!Sound.on && !e.target.closest("#soundBtn")) { Sound.start(); updateSoundUI(); } }, true);
 
-document.addEventListener("visibilitychange", () => { document.body.classList.toggle("paused", document.hidden); if (Sound.ctx) { if (document.hidden) Sound.ctx.suspend(); else if (Sound.on) Sound.ctx.resume(); } if (!document.hidden && !RN.b) render(); });
+document.addEventListener("visibilitychange", () => { document.body.classList.toggle("paused", document.hidden); if (Sound.ctx) { if (document.hidden) Sound.ctx.suspend(); else if (Sound.on) Sound.ctx.resume(); } if (!document.hidden && !RN.b) { if (cloud.user) cloud.pull(); else render(); } });
+window.addEventListener("online", () => { if (cloud.user) cloud.pull(); });
 setInterval(() => { if (S.tab === "library" && sheet.hidden) { const c = document.querySelector(".timechip .stamp"); if (c) c.textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " · Marine Drive"; setTod(); } }, 30000);
 
 render();
 store.init();
+cloud.init();
 })();
 </script>
 </body></html>
