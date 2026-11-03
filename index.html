@@ -810,7 +810,6 @@ function pullSheet(b, rect, el) {
       ${why}
       ${kind === "aside" ? `<p class="sub" style="margin:0">Set aside${cur(b) ? " after starting on " + fmt(cur(b).start) : ""}.</p>` : ""}
       <div class="btns" style="width:100%"><button class="btn primary" data-act="start" data-id="${b.id}">${kind === "aside" ? "Pick back up" : "Start reading"}</button><button class="btn" data-act="close">Back to shelf</button></div>
-      ${!b.why && kind === "want" ? `<button class="btn quiet small" data-act="edit-why" data-id="${b.id}">Add why you picked this up</button>` : ""}
       <div class="btns" style="width:100%"><button class="btn quiet small" data-act="edit" data-id="${b.id}">Edit details</button><button class="btn quiet small" data-act="remove" data-id="${b.id}" style="color:var(--ink-3)">Remove</button></div>
     </div>`, () => el && el.classList.remove("pulling"));
   flyFrom(rect);
@@ -930,7 +929,7 @@ function daySheet(date) {
 
 function manualSheet() {
   openSheet(`<form class="stack" id="manForm"><h2>Add a book by hand</h2>
-    <label class="field"><span>Title</span><input id="m-title" required></label>
+    <label class="field"><span>Title</span><input id="m-title" value="${esc(S.query || "")}" required></label>
     <label class="field"><span>Author</span><input id="m-author"></label>
     <div class="row2"><label class="field"><span>Pages</span><input id="m-pages" inputmode="numeric"></label><label class="field"><span>Year</span><input id="m-year" inputmode="numeric"></label></div>
     <div class="btns"><button class="btn" type="submit" data-as="want">Want to read</button><button class="btn primary" type="submit" data-as="reading">Start reading</button><button class="btn" type="submit" data-as="done">Already read</button></div></form>`);
@@ -955,7 +954,7 @@ function addBook(b, as) {
   if (S.sample) { S.sample = false; S.books = local.read() || []; }
   if (as === "done") { pastSheet(b, true); return; }
   S.books.push(b); save(b);
-  whySheet(b, () => { if (as === "reading") S.tab = "library"; render(); toast(as === "reading" ? "On the table. Enjoy it." : "On your Want to read shelf"); });
+  closeSheet(); if (as === "reading") S.tab = "library"; render(); toast(as === "reading" ? "On the table. Enjoy it." : "Added to Want to read");
 }
 
 function sortReadings(b) { b.readings.sort((x, y) => (x.end ? 0 : 1) - (y.end ? 0 : 1) || (x.start < y.start ? -1 : 1)); }
@@ -966,7 +965,6 @@ function pastSheet(b, isNew) {
     <div class="bc-head">${coverHTML(b, "m")}<div class="meta"><span class="stamp" style="color:var(--terra)">${isNew ? "Already read" : "Add an earlier read"}</span><h2>${esc(b.title)}</h2><p class="sub" style="margin:0">${esc(authorStr(b))}</p></div></div>
     <p class="sub" style="margin:0">Roughly is fine. If you only remember the month, pick any day in it.</p>
     <div class="row2"><label class="field"><span>Started</span><input type="date" id="p-start" max="${t}" required></label><label class="field"><span>Finished</span><input type="date" id="p-end" max="${t}" required></label></div>
-    ${isNew ? `<label class="field"><span>Why you picked it up (optional)</span><input id="p-why" placeholder="Recommended by Mum"></label>` : ""}
     <label class="field"><span>A closing line (optional)</span><textarea id="p-close" placeholder="One sentence about the book, or where you were while reading it"></textarea></label>
     <div class="field"><label>Its color</label><div class="swatches" id="psws">${PALETTE.map(c => `<button type="button" class="sw ${c === sel.color ? "sel" : ""}" data-sw="${c}" style="background:${c}" aria-label="Color ${c}"></button>`).join("")}</div></div>
     <button class="btn terra" type="submit" id="pBtn">Place on the shelf</button>
@@ -981,7 +979,7 @@ function pastSheet(b, isNew) {
     if (en < st) [st, en] = [en, st];
     b.readings.push({ start: st, end: en, days: [], closing: $("#p-close").value.trim() });
     sortReadings(b);
-    if (isNew) { b.why = ($("#p-why")?.value || "").trim(); b.status = "finished"; S.books.push(b); }
+    if (isNew) { b.status = "finished"; S.books.push(b); }
     else if (b.status === "want") b.status = "finished";
     b.color = sel.color; save(b);
     const ri = b.readings.findIndex(r => r.end === en && r.start === st);
@@ -1281,6 +1279,23 @@ async function googleBooks(q) {
       blurb: v.description ? v.description.replace(/<[^>]+>/g, "").slice(0, 160) : "" }; }).filter(r => r.title && r.title !== "undefined");
   } finally { clearTimeout(t); }
 }
+async function appleBooks(q) {
+  const one = async (country) => {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 7000);
+    try {
+      const res = await fetch("https://itunes.apple.com/search?media=ebook&entity=ebook&limit=12&country=" + country + "&term=" + encodeURIComponent(q), { signal: ctl.signal });
+      if (!res.ok) throw new Error("http " + res.status);
+      const j = await res.json();
+      return (j.results || []).filter(x => x.trackName).map(x => ({ gid: "ap:" + x.trackId, title: x.trackName, authors: x.artistName ? x.artistName.split(/\s*(?:&|,| and )\s*/).filter(Boolean) : [],
+        year: x.releaseDate ? parseInt(x.releaseDate) : null, pages: null, thumb: x.artworkUrl100 ? x.artworkUrl100.replace(/\/\d+x\d+bb\./, "/400x600bb.") : null,
+        blurb: x.description ? x.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160) : "" }));
+    } finally { clearTimeout(t); }
+  };
+  const [us, ind] = await Promise.allSettled([one("us"), one("in")]);
+  const out = [...(us.value || []), ...(ind.value || [])];
+  if (!out.length && us.status === "rejected" && ind.status === "rejected") throw new Error("apple failed");
+  return out;
+}
 async function openLibrary(q) {
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
   try {
@@ -1300,17 +1315,37 @@ Use null when unsure. Never invent a book.`, { modelTier: "quick" });
   const arr = Array.isArray(data) ? data : (data && Array.isArray(data.books) ? data.books : []);
   return arr.filter(x => x && x.title).map(x => ({ title: String(x.title), authors: Array.isArray(x.authors) ? x.authors.map(String) : [], year: x.year || null, pages: x.pages || null, blurb: x.blurb || "", gid: null, thumb: null }));
 }
+const norm = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\(.*?\)|\[.*?\]/g, "").replace(/[:;].*$/, "").replace(/[^a-z0-9 ]/g, " ").replace(/\b(the|a|an)\b/g, " ").replace(/\s+/g, " ").trim();
+function mergeResults(q, lists) {
+  const qn = norm(q), words = qn.split(" ").filter(Boolean);
+  const map = new Map();
+  lists.forEach((list, li) => list.forEach((r, ri) => {
+    const key = norm(r.title) + "|" + norm((r.authors || [])[0]).split(" ").pop();
+    const prev = map.get(key);
+    if (!prev) { map.set(key, { ...r, _rank: ri + li * 0.5 }); return; }
+    prev.pages = prev.pages || r.pages; prev.year = prev.year || r.year; prev.blurb = prev.blurb || r.blurb;
+    if (!prev.thumb && r.thumb) prev.thumb = r.thumb;
+    prev._rank = Math.min(prev._rank, ri + li * 0.5) - 1;
+  }));
+  const score = r => {
+    const t = norm(r.title), hay = t + " " + norm((r.authors || []).join(" "));
+    let sc = r._rank;
+    if (t === qn) sc -= 30; else if (qn.startsWith(t) || t.startsWith(qn)) sc -= 18;
+    sc -= words.filter(w => hay.includes(w)).length / Math.max(1, words.length) * 20;
+    if (!r.thumb) sc += 3;
+    return sc;
+  };
+  return [...map.values()].sort((a, b) => score(a) - score(b)).slice(0, 20);
+}
 async function runSearch(q) {
   S.query = q; S.searching = true; S.searchError = ""; S.results = null; render();
-  try {
-    S.results = await googleBooks(q); S.source = "Results from Google Books";
-  } catch (e) {
-    try { S.results = await openLibrary(q); S.source = "Google Books is busy right now, so these come from Open Library."; }
-    catch (e1) {
-    try { S.results = await claudeBooks(q); S.source = "Google Books couldn't be reached from here, so Claude suggested these. Check the details before adding."; }
-    catch (e2) { S.searchError = e2 && e2.code === "not_granted" ? "Search needs permission to ask Claude when Google Books can't be reached. You can still add a book by hand." : "Couldn't reach Google Books or Open Library right now. Check your connection and try again, or add the book by hand."; }
-    }
-  }
+  const [ap, ol, gb] = await Promise.allSettled([appleBooks(q), openLibrary(q), googleBooks(q)]);
+  const lists = [ap, gb, ol].map(x => x.status === "fulfilled" ? x.value : []);
+  if (lists.some(l => l.length)) { S.results = mergeResults(q, lists); S.source = "Searched Apple Books, Google Books and Open Library"; }
+  else if ([ap, ol, gb].every(x => x.status === "rejected")) {
+    try { S.results = await claudeBooks(q); S.source = "Book catalogues couldn't be reached from here, so Claude suggested these. Check the details before adding."; }
+    catch (e2) { S.searchError = "Couldn't reach the book catalogues right now. Check your connection and try again, or add the book by hand."; }
+  } else S.results = [];
   S.searching = false; render();
   const qi = $("#q"); qi && qi.blur();
 }
